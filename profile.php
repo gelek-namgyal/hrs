@@ -366,11 +366,8 @@ $bookings_data = $temp_bookings; // Store in a new variable for later use
     <header>
         <nav>
             <div class="nav-links">
-                <a href="landingpage.html">Home</a>
+                <a href="index.html">Home</a>
                 <a href="index.html#rooms">Rooms</a>
-                <a href="index.html#services">Services</a>
-                <a href="profile.php">Profile</a>
-                <a href="logout.php">Logout</a>
             </div>
             <div class="user-icon">
                 <a href="profile.php"><i class="fas fa-user"></i></a>

@@ -2,6 +2,59 @@
 session_start();
 include '../config.php';
 
+// Handle booking actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['action'])) {
+        $booking_id = $_POST['booking_id'];
+        
+        switch ($_POST['action']) {
+            case 'confirm':
+                $stmt = $conn->prepare("UPDATE bookings SET status = 'confirmed' WHERE booking_id = ?");
+                $stmt->bind_param("i", $booking_id);
+                if ($stmt->execute()) {
+                    echo json_encode(['success' => true, 'message' => 'Booking confirmed successfully']);
+                } else {
+                    echo json_encode(['success' => false, 'message' => 'Error confirming booking']);
+                }
+                exit;
+                
+            case 'cancel':
+                $reason = $_POST['reason'] ?? '';
+                $stmt = $conn->prepare("UPDATE bookings SET status = 'cancelled' WHERE booking_id = ?");
+                $stmt->bind_param("i", $booking_id);
+                if ($stmt->execute()) {
+                    echo json_encode(['success' => true, 'message' => 'Booking cancelled successfully']);
+                } else {
+                    echo json_encode(['success' => false, 'message' => 'Error cancelling booking']);
+                }
+                exit;
+                
+            case 'edit':
+                $check_in = $_POST['check_in'];
+                $days = $_POST['days'];
+                $persons = $_POST['persons'];
+                $room_id = $_POST['room_id'];
+                
+                // Get room type and price from rooms table
+                $room_query = $conn->prepare("SELECT room_type, price FROM rooms WHERE id = ?");
+                $room_query->bind_param("i", $room_id);
+                $room_query->execute();
+                $room_result = $room_query->get_result()->fetch_assoc();
+                
+                $total_price = $room_result['price'] * $days;
+                
+                $stmt = $conn->prepare("UPDATE bookings SET booking_date = ?, days = ?, persons = ?, room_id = ?, room_type = ?, total_price = ? WHERE booking_id = ?");
+                $stmt->bind_param("siisddi", $check_in, $days, $persons, $room_id, $room_result['room_type'], $total_price, $booking_id);
+                if ($stmt->execute()) {
+                    echo json_encode(['success' => true, 'message' => 'Booking updated successfully']);
+                } else {
+                    echo json_encode(['success' => false, 'message' => 'Error updating booking']);
+                }
+                exit;
+        }
+    }
+}
+
 // Fetch all bookings with user details
 $bookingsQuery = $conn->query("
     SELECT b.*, u.full_name, u.email, u.phone_number
@@ -251,6 +304,63 @@ $bookingsQuery = $conn->query("
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         }
 
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: #fff;
+            margin: 10% auto;
+            padding: 20px;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 500px;
+            position: relative;
+        }
+
+        .close {
+            position: absolute;
+            right: 20px;
+            top: 10px;
+            font-size: 28px;
+            cursor: pointer;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #fff;
+            font-weight: 500;
+        }
+
         @media (max-width: 768px) {
             .sidebar {
                 transform: translateX(-100%);
@@ -323,13 +433,14 @@ $bookingsQuery = $conn->query("
                         <th>Guest Details</th>
                         <th>Room Details</th>
                         <th>Stay Details</th>
+                        <th>Status</th>
                         <th>Price</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php while($booking = $bookingsQuery->fetch_assoc()): ?>
-                    <tr>
+                    <tr data-booking-id="<?php echo $booking['booking_id']; ?>">
                         <td>#<?php echo $booking['booking_id']; ?></td>
                         <td>
                             <strong><?php echo htmlspecialchars($booking['full_name']); ?></strong><br>
@@ -345,22 +456,48 @@ $bookingsQuery = $conn->query("
                             Duration: <?php echo $booking['days']; ?> days<br>
                             Guests: <?php echo $booking['persons']; ?> persons
                         </td>
+                        <td>
+                            <span class="status status-<?php echo strtolower($booking['status']); ?>">
+                                <?php echo ucfirst($booking['status']); ?>
+                            </span>
+                        </td>
                         <td>Rs. <?php echo number_format($booking['total_price'], 2); ?></td>
                         <td>
-                            <button class="action-btn view-btn" title="View Details" onclick="viewBooking(<?php echo $booking['booking_id']; ?>)">
-                                <i class="fas fa-eye"></i>
-                            </button>
+                            <?php if ($booking['status'] === 'pending'): ?>
                             <button class="action-btn confirm-btn" title="Confirm Booking" onclick="confirmBooking(<?php echo $booking['booking_id']; ?>)">
                                 <i class="fas fa-check"></i>
                             </button>
+                            <?php endif; ?>
+                            <?php if ($booking['status'] !== 'cancelled'): ?>
                             <button class="action-btn cancel-btn" title="Cancel Booking" onclick="cancelBooking(<?php echo $booking['booking_id']; ?>)">
                                 <i class="fas fa-times"></i>
                             </button>
+                            <?php endif; ?>
                         </td>
                     </tr>
                     <?php endwhile; ?>
                 </tbody>
             </table>
+        </div>
+    </div>
+
+
+    <!-- Cancel Booking Modal -->
+    <div id="cancelModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Cancel Booking</h2>
+            <form id="cancelBookingForm">
+                <input type="hidden" name="booking_id" id="cancel_booking_id">
+                <input type="hidden" name="action" value="cancel">
+                
+                <div class="form-group">
+                    <label>Cancellation Reason:</label>
+                    <textarea name="reason" required></textarea>
+                </div>
+                
+                <button type="submit" class="btn cancel-btn">Confirm Cancellation</button>
+            </form>
         </div>
     </div>
 
@@ -376,21 +513,89 @@ $bookingsQuery = $conn->query("
             });
         });
 
+        // Modal handling
+        const editModal = document.getElementById('editModal');
+        const cancelModal = document.getElementById('cancelModal');
+        const closeButtons = document.getElementsByClassName('close');
+
+        Array.from(closeButtons).forEach(button => {
+            button.onclick = function() {
+                editModal.style.display = "none";
+                cancelModal.style.display = "none";
+            }
+        });
+
+        window.onclick = function(event) {
+            if (event.target == editModal) {
+                editModal.style.display = "none";
+            }
+            if (event.target == cancelModal) {
+                cancelModal.style.display = "none";
+            }
+        }
+
         function viewBooking(bookingId) {
-            // Add view booking logic
-            alert('View booking: ' + bookingId);
+            // Implement view booking details
+            window.location.href = `view_booking.php?id=${bookingId}`;
+        }
+
+        function editBooking(bookingId) {
+            document.getElementById('edit_booking_id').value = bookingId;
+            // Fetch current booking details and populate form
+            editModal.style.display = "block";
         }
 
         function confirmBooking(bookingId) {
             if(confirm('Are you sure you want to confirm this booking?')) {
-                // Add confirmation logic
+                sendBookingAction('confirm', bookingId);
             }
         }
 
         function cancelBooking(bookingId) {
-            if(confirm('Are you sure you want to cancel this booking?')) {
-                // Add cancellation logic
+            document.getElementById('cancel_booking_id').value = bookingId;
+            cancelModal.style.display = "block";
+        }
+
+        // Handle form submissions
+        document.getElementById('editBookingForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            sendBookingAction('edit', formData);
+        });
+
+        document.getElementById('cancelBookingForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            sendBookingAction('cancel', formData);
+        });
+
+        function sendBookingAction(action, data) {
+            let formData;
+            if (data instanceof FormData) {
+                formData = data;
+            } else {
+                formData = new FormData();
+                formData.append('booking_id', data);
+                formData.append('action', action);
             }
+
+            fetch('manage_bookings.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred. Please try again.');
+            });
         }
     </script>
 </body>

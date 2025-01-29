@@ -15,8 +15,8 @@ $totalUsers = $totalUsersQuery->fetch_assoc()['total_users'];
 $totalBookingsQuery = $conn->query("SELECT COUNT(*) AS total_bookings FROM bookings");
 $totalBookings = $totalBookingsQuery->fetch_assoc()['total_bookings'];
 
-$pendingBookingsQuery = $conn->query("SELECT COUNT(*) AS pending_bookings FROM bookings WHERE status = 'pending'");
-$pendingBookings = $pendingBookingsQuery->fetch_assoc()['pending_bookings'];
+$totalRevenueQuery = $conn->query("SELECT SUM(total_price) AS total_revenue FROM bookings WHERE status = 'confirmed'");
+$totalRevenue = $totalRevenueQuery->fetch_assoc()['total_revenue'] ?? 0;
 
 // Fetch recent bookings
 $recentBookingsQuery = $conn->query("
@@ -393,9 +393,11 @@ $recentBookingsQuery = $conn->query("
             </div>
             
             <div class="card">
-                <div class="icon">⏳</div>
-                <h3>Pending Bookings</h3>
-                <p><?php echo $pendingBookings; ?></p>
+                <span class="icon">
+                    <i class="fas fa-money-bill-wave"></i>
+                </span>
+                <h3>Total Revenue</h3>
+                <p>Rs. <?php echo number_format($totalRevenue, 2); ?></p>
             </div>
         </div>
 
